@@ -5,7 +5,14 @@
 
 # ── Paths ──────────────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-WINE_DIR="${SCRIPT_DIR}/wine"
+
+# Detect if running from inside a .app bundle (Resources/) vs git-clone root
+if [[ "${SCRIPT_DIR}" == *".app/Contents/Resources"* ]]; then
+    WINE_DIR="${HOME}/Library/Application Support/WineSteam/wine"
+else
+    WINE_DIR="${SCRIPT_DIR}/wine"
+fi
+
 WINE_BIN="${WINE_DIR}/bin"
 WINE_LIB="${WINE_DIR}/lib"
 

@@ -11,6 +11,9 @@ steamwebhelper_wrapper.exe
 WineSteam.app/Contents/MacOS/WineSteamLauncher
 WineSteam.app/Contents/_CodeSignature/
 
+# Distribution build output (from `make bundle`)
+dist/
+
 # macOS junk
 .DS_Store
 *.swp

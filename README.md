@@ -8,7 +8,15 @@ A lightweight launcher that uses [Wine Staging](https://www.winehq.org/) to run 
 
 **Tested on:** macOS 14+ with Apple Silicon (M1/M2/M3/M4) via Rosetta 2.
 
-## Quick Start
+## Download
+
+Grab the latest **WineSteam.zip** from the [Releases](https://github.com/melonforall/winesteam/releases) page. Unzip it, drag **WineSteam.app** to your Applications folder (or anywhere), and double-click. On first launch it will download Wine (~190 MB) and set everything up automatically.
+
+> **Note:** Since the app is not notarized, macOS will block it on first open. Right-click the app and select "Open" to bypass Gatekeeper.
+
+## Quick Start (from source)
+
+If you prefer the command line or want to hack on it:
 
 ```bash
 # Clone the repo
@@ -48,23 +56,30 @@ Check [ProtonDB](https://www.protondb.com/) for game-specific reports — if a g
 
 ## Building from Source
 
-Pre-built binaries are not included in the repo. The app works out of the box using shell scripts, but you can optionally build the native components:
+Pre-built binaries are not included in the repo. The app works out of the box using shell scripts, but you can build the distributable .app and native components:
 
 ```bash
-# Build the steamwebhelper wrapper (requires mingw-w64)
+# Install build dependencies
 brew install mingw-w64
-make wrapper
 
-# Build the native macOS launcher (optional, requires Xcode CLI tools)
-make launcher
+# Build the self-contained .app bundle (outputs to dist/)
+make bundle
 
-# Install the wrapper into your Wine prefix
-make install-wrapper
+# Create a release zip
+make release
+```
+
+This compiles the Swift launcher, builds the steamwebhelper wrapper, and assembles everything into `dist/WineSteam.app`.
+
+You can also build individual components:
+
+```bash
+make wrapper          # Build steamwebhelper_wrapper.exe only
+make launcher         # Build native launcher for the dev app bundle
+make install-wrapper  # Install wrapper into existing Wine prefix
 ```
 
 The **steamwebhelper wrapper** (`webhelper_wrapper.c`) intercepts Steam's CEF browser process and injects flags needed for Wine compatibility. Without it, Steam's UI renders as a black screen.
-
-The **native launcher** (`WineSteamLauncher.swift`) is optional — the app bundle uses a shell script by default. The native version provides macOS-native error dialogs.
 
 ## File Structure
 
@@ -73,25 +88,27 @@ winesteam/
 ├── setup.sh                    # Downloads Wine Staging
 ├── launch-steam.sh             # Main launcher script
 ├── dismiss-dialogs.sh          # Auto-dismisses Steam error popups
-├── Makefile                    # Build targets for native components
+├── Makefile                    # Build targets (bundle, wrapper, release)
 ├── webhelper_wrapper.c         # Source: steamwebhelper Wine-compat wrapper
 ├── webhelper-wrapper.cmd       # Batch file alternative (unused)
-├── WineSteamLauncher.swift     # Source: native macOS launcher (optional)
-├── WineSteam.app/              # macOS app bundle (double-click launcher)
+├── WineSteamLauncher.swift     # Source: native macOS launcher with setup UI
+├── WineSteam.app/              # Dev app bundle (shell script launcher)
 │   └── Contents/
 │       ├── Info.plist
-│       ├── MacOS/launch        # Shell script launcher
+│       ├── MacOS/launch        # Shell script entry point
 │       └── Resources/          # AppIcon.icns (provide your own)
-├── wine/                       # Wine runtime (created by setup.sh, gitignored)
+├── dist/                       # Build output (from `make bundle`, gitignored)
+│   └── WineSteam.app/          # Self-contained release app bundle
+├── wine/                       # Wine runtime (from setup.sh, gitignored)
 ├── LICENSE
 └── README.md
 ```
 
 ## Troubleshooting
 
-**Steam shows a black screen:** Steam auto-updates can overwrite the webhelper wrapper, breaking CEF rendering. Re-run `make install-wrapper`, or just relaunch — the launch script detects this and re-installs the wrapper automatically.
+**Steam shows a black screen:** Steam auto-updates can overwrite the webhelper wrapper, breaking CEF rendering. Re-run `make install-wrapper`, or just relaunch -- the launch script detects this and re-installs the wrapper automatically.
 
-**Steam shows error popups (0x3XXX):** These are content server errors under Wine — they're harmless and downloads still work. The `dismiss-dialogs.sh` script auto-closes them. Grant Accessibility permissions if prompted.
+**Steam shows error popups (0x3XXX):** These are content server errors under Wine -- they're harmless and downloads still work. The `dismiss-dialogs.sh` script auto-closes them. Grant Accessibility permissions if prompted.
 
 **"wine server failed to run":** Make sure you ran `setup.sh` first. The Wine runtime needs its share/nls files.
 
