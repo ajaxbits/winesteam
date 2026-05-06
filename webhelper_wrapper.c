@@ -17,6 +17,15 @@ int main(int argc, char *argv[]) {
     offset = snprintf(cmdline, sizeof(cmdline), "\"%ssteamwebhelper_real.exe\"", exepath);
     if (offset < 0 || (size_t)offset >= sizeof(cmdline)) return 1;
 
+    // Check if flags are already present (child process re-invocation)
+    int already_patched = 0;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--in-process-gpu") == 0) {
+            already_patched = 1;
+            break;
+        }
+    }
+
     // Append all original arguments with bounds checking
     for (int i = 1; i < argc; i++) {
         int needed;
@@ -31,8 +40,8 @@ int main(int argc, char *argv[]) {
         offset += needed;
     }
 
-    // Append our Wine-compatibility flags
-    {
+    // Append our Wine-compatibility flags only if not already present
+    if (!already_patched) {
         int needed = snprintf(cmdline + offset, sizeof(cmdline) - offset,
                               " --no-sandbox --in-process-gpu --disable-gpu --disable-gpu-compositing");
         if (needed < 0 || (size_t)(offset + needed) >= sizeof(cmdline)) return 1;
