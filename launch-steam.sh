@@ -76,9 +76,10 @@ CEF_DIR="${WINEPREFIX}/drive_c/Program Files (x86)/Steam/bin/cef/cef.win64"
 WRAPPER_DST="${CEF_DIR}/steamwebhelper.exe"
 REAL_DST="${CEF_DIR}/steamwebhelper_real.exe"
 if [[ -f "${WRAPPER_SRC}" ]] && [[ -f "${WRAPPER_DST}" ]]; then
-    WRAPPER_SIZE=$(stat -f%z "${WRAPPER_SRC}")
     INSTALLED_SIZE=$(stat -f%z "${WRAPPER_DST}")
-    if [[ "${INSTALLED_SIZE}" -ne "${WRAPPER_SIZE}" ]]; then
+    # Real Steam binary is always >1MB; our wrapper is <1MB.
+    # If the installed file is large, Steam updated and overwrote our wrapper.
+    if [[ "${INSTALLED_SIZE}" -gt 1048576 ]]; then
         echo "Steam update overwrote webhelper wrapper — re-installing..."
         cp "${WRAPPER_DST}" "${REAL_DST}"
         cp "${WRAPPER_SRC}" "${WRAPPER_DST}"
