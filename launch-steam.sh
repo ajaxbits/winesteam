@@ -95,8 +95,6 @@ export DYLD_LIBRARY_PATH="${WINE_LIB}"
 export PATH="${WINE_BIN}:${PATH}"
 
 # ── Performance ────────────────────────────────────────────────────────
-export WINEMSYNC="${WINEMSYNC:-1}"
-export WINEESYNC="${WINEESYNC:-1}"
 export DOTNET_EnableWriteXorExecute=0
 
 # ── Steam CEF rendering fix ───────────────────────────────────────────
@@ -104,7 +102,7 @@ export DOTNET_EnableWriteXorExecute=0
 # Force CEF to use software rendering (SwiftShader) via these overrides.
 # This only affects Steam's UI — games use their own rendering path.
 export STEAM_DISABLE_GPU_PROCESS=1
-export GALLIUM_DRIVER=llvmpipe
+
 
 # Force CEF to use software rendering with no sandbox.
 # These are passed to steamwebhelper child processes via environment.
@@ -113,8 +111,14 @@ export STEAM_CEF_COMMAND_LINE="--no-sandbox --in-process-gpu --disable-gpu --dis
 # ── Debug ──────────────────────────────────────────────────────────────
 export WINEDEBUG="${WINEDEBUG:--all}"
 
+# msync is the macOS-native sync primitive (Mach semaphores); keep it enabled.
+# esync (eventfd) is Linux-only and should be disabled on macOS.
+export WINEMSYNC=1
+export WINEESYNC=0
+
+
 # ── Kill stale wineserver (prevents "won't start" after unclean shutdown) ─
-"${WINESERVER}" -k 2>/dev/null && sleep 1 || true
+"${WINESERVER}" -k 2>/dev/null && sleep 2 || true
 
 # ── Launch ─────────────────────────────────────────────────────────────
 echo "=== WineSteam (Open Source) ==="
@@ -126,31 +130,63 @@ echo ""
 
 # Auto-dismiss error dialogs if the script exists
 DISMISS_PID=""
+pkill -f "dismiss-dialogs\\.sh" 2>/dev/null
 if [[ -x "${SCRIPT_DIR}/dismiss-dialogs.sh" ]]; then
     "${SCRIPT_DIR}/dismiss-dialogs.sh" &
     DISMISS_PID=$!
 fi
 
 # Clean up on signals (user quit / system shutdown)
+CLEANUP_DONE=0
 cleanup() {
-    [[ -n "$DISMISS_PID" ]] && kill $DISMISS_PID 2>/dev/null
-    "${WINESERVER}" -k 2>/dev/null
+    [[ $CLEANUP_DONE -eq 1 ]] && return
+    CLEANUP_DONE=1
+    # Restore original display mode FIRST, before killing anything
+    if [[ -n "$ORIGINAL_DISPLAY_MODE" ]] && [[ -x "$DISPLAYPLACER" ]]; then
+        "$DISPLAYPLACER" "$ORIGINAL_DISPLAY_MODE"
+    fi
+    # Now force-kill everything — graceful shutdown is unreliable under Wine
+    # Exclude our own PID to avoid self-kill before cleanup completes
+    pkill -9 -f "winedevice|steamwebhelper|steamservice|steam\\.exe|explorer\\.exe" 2>/dev/null
+    killall -9 wine 2>/dev/null
+    "${WINESERVER}" -k9 2>/dev/null
+    [[ -n "$DISMISS_PID" ]] && kill -9 $DISMISS_PID 2>/dev/null
+    pkill -9 -f "dismiss-dialogs" 2>/dev/null
+    exit 0
 }
-trap cleanup INT TERM HUP
+trap cleanup INT TERM HUP EXIT
 
 # Launch Steam and wait for it to exit
 # CEF flags: force software rendering (fixes black screen on non-CrossOver Wine)
+
+export STEAM_NO_GPU=1
+export STEAM_SKIP_GPU_DRIVER_CHECK=1
+
+# Switch display to non-scaled native resolution so Wine sees higher modes.
+# Wine's virtual desktop caps available resolutions at the macOS reported size.
+ORIGINAL_DISPLAY_MODE=""
+DISPLAYPLACER=$(command -v displayplacer 2>/dev/null || echo "/opt/homebrew/bin/displayplacer")
+if [[ -x "$DISPLAYPLACER" ]]; then
+    # Capture the current mode command (strip 'displayplacer ' prefix and surrounding quotes)
+    ORIGINAL_DISPLAY_MODE=$("$DISPLAYPLACER" list 2>/dev/null | grep "^displayplacer " | head -1 | sed 's/^displayplacer "//;s/"$//')
+    DISPLAY_ID=$(echo "$ORIGINAL_DISPLAY_MODE" | sed 's/.*id:\([^ ]*\).*/\1/')
+    # Switch to 2560x1600 non-scaled — avoids the notch (64px shorter than full panel)
+    # while still providing near-native resolution for games
+    "$DISPLAYPLACER" "id:${DISPLAY_ID} res:2560x1600 hz:60 color_depth:8 scaling:off" 2>/dev/null
+    sleep 1
+fi
+
+# Launch Steam directly (no virtual desktop) — the mac driver exposes the native
+# display modes to games when the macOS display is set to non-scaled resolution.
+# Using explorer /desktop= at the screen's exact size causes Wine to hang.
 "${WINE_BIN}/wine" "${STEAM_EXE}" \
-    -cef-disable-gpu \
-    -cef-disable-gpu-compositing \
-    -cef-in-process-gpu \
-    -cef-disable-sandbox \
-    -no-cef-sandbox \
-    -noverifyfiles -norepairfiles "$@" || true
+    -noverifyfiles -norepairfiles \
+    -cef-disable-gpu -cef-disable-gpu-compositing \
+    -cef-in-process-gpu -cef-disable-sandbox \
+    "$@" &
+WINE_PID=$!
 
-# Wait for all Wine processes to finish (wineserver stays alive while they run)
-"${WINESERVER}" -w || true
-
-# Clean up dismiss-dialogs
-[[ -n "$DISMISS_PID" ]] && kill $DISMISS_PID 2>/dev/null
-exit 0
+# Wait in a loop so bash can process signals (SIGINT) between iterations
+while kill -0 $WINE_PID 2>/dev/null; do
+    wait $WINE_PID 2>/dev/null || break
+done

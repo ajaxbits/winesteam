@@ -1,8 +1,11 @@
 #!/bin/bash
 # Monitors for Steam error dialog windows and auto-dismisses them
 # by sending Return key via osascript to the frontmost wine process.
+# Exits automatically when parent process dies.
 
-while true; do
+PARENT_PID=$PPID
+
+while kill -0 "$PARENT_PID" 2>/dev/null; do
     sleep 3
     # Check if any wine process has multiple windows (dialog = extra window)
     WINE_WINDOWS=$(osascript -e '
